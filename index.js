@@ -1,7 +1,6 @@
 class PreloadEach {
 
-
-  static get TYPE(){
+  static get TYPE() {
     return {
       HTML: "document",
       SCRIPT: "script",
@@ -10,106 +9,136 @@ class PreloadEach {
   };
 
 
-  constructor(options){
-    this.options = {};
+  constructor(options) {
+
     this.queue = [];
     this.currentQueue = [];
     this.finishedQueue = [];
 
-    let defaultOptions = {
-      targetDom : document,
-      maxFetchNum : 2,
-      maxNest : 4,
+    options = options || {};
+    this.options  = {
+      targetDom:  options.targetDom || document,
+      maxFetchNum: options.maxFetchNum || 2 ,
+      maxNest:  options.maxNest || 4,
+      onlyHover:  options.onlyHover || false,
     };
-    this.options = Object.assign(defaultOptions, options);
   }
 
-  start(){
+  start() {
     if (
-      this.options.targetDom.readyState === "complete" ||
-      (this.options.targetDom.readyState !== "loading" && !this.options.targetDom.documentElement.doScroll)
+        this.options.targetDom.readyState === "complete" ||
+        (this.options.targetDom.readyState !== "loading" && !this.options.targetDom.documentElement.doScroll)
     ) {
-      this.addQueueFromDom(this.options.targetDom, 1);
+      this.loadedEvent();
     } else {
-      this.options.targetDom.addEventListener("DOMContentLoaded", ()=>{this.addQueueFromDom(this.options.targetDom, 1);});
+      this.options.targetDom.addEventListener("DOMContentLoaded", this.loadedEvent.bind(this));
     }
   }
 
-  addQueueFromDom(dom, nest){
+
+  addHoverEventListener(dom){
+    let aDomList = dom.querySelectorAll("a");
+    for(let aDom of aDomList){
+      aDom.addEventListener("mouseover",this.hoverEvent.bind(this));
+      aDom.addEventListener("touchstart",this.hoverEvent.bind(this));
+    }
+
+  }
+
+  loadedEvent(){
+    if(!this.options.onlyHover){
+      this.addQueueFromTagName(this.options.targetDom, "a", "href", PreloadEach.TYPE.HTML, 1);
+    }
+
+    this.addHoverEventListener(this.options.targetDom);
+  }
+
+  hoverEvent(event){
+    console.log(event);
+    this.addQueue(event.target.href,  PreloadEach.TYPE.HTML, 1);
+  }
+
+  addQueueFromDom(dom, nest) {
     this.addQueueFromTagName(dom, "a", "href", PreloadEach.TYPE.HTML, nest);
     this.addQueueFromTagName(dom, "img", "src", PreloadEach.TYPE.IMAGE, nest);
     this.addQueueFromTagName(dom, "link", "href", PreloadEach.TYPE.SCRIPT, nest);
     this.addQueueFromTagName(dom, "script", "src", PreloadEach.TYPE.SCRIPT, nest);
   }
 
-  addQueueFromTagName(dom,tagName,urlAttrName,type, nest){
-    let elements = dom.getElementsByTagName(tagName);
-    for(let e of elements){
-      if(e[urlAttrName]){
+  addQueueFromTagName(dom, tagName, urlAttrName, type, nest) {
+    let elements = dom.querySelectorAll(tagName);
+    for (let e of elements) {
+      if (e[urlAttrName]) {
         this.addQueue(e[urlAttrName], type, nest);
       }
     }
   }
 
-  addQueue(url, type, nest){
-    if( this.isTargetUrl(url) && !this.isExistInQueue(url) ){
+  addQueue(url, type, nest) {
+    if (this.isTargetUrl(url) && !this.isExistInQueue(url)) {
       console.log(url);
       let one = {url, type, nest};
       this.queue.push(one);
     }
-    this.execQueue();
+    setTimeout(this.execQueue.bind(this),0);
   }
 
-  isExistInQueue(url){
-    if(this.queue.filter((elm)=>{return url === elm.url}).length > 0){
+  isExistInQueue(url) {
+    if (this.queue.filter((elm) => {
+          return url === elm.url
+        }).length > 0) {
       return true;
     }
-    if(this.currentQueue.filter((elm)=>{return url === elm.url}).length > 0){
+    if (this.currentQueue.filter((elm) => {
+          return url === elm.url
+        }).length > 0) {
       return true;
     }
-    if(this.finishedQueue.filter((elm)=>{return url === elm.url}).length > 0){
+    if (this.finishedQueue.filter((elm) => {
+          return url === elm.url
+        }).length > 0) {
       return true;
     }
 
     return false;
   }
 
-  isTargetUrl(url){
-    if(location.href === url){
+  isTargetUrl(url) {
+    if (location.href === url) {
       return false;
     }
     return true;
   }
 
 
-  execQueue(){
-    if(this.currentQueue >= this.options.maxFetchNum){
+  execQueue() {
+    if (this.currentQueue >= this.options.maxFetchNum) {
       return;
     }
-    if(this.queue.length === 0){
+    if (this.queue.length === 0) {
       return;
     }
     let one = this.queue.shift();
     this.currentQueue.push(one);
 
     let targetPromise;
-    if(one.type === PreloadEach.TYPE.HTML){
+    if (one.type === PreloadEach.TYPE.HTML) {
       targetPromise = this.execHtml(one);
-    }else if(one.type === PreloadEach.TYPE.SCRIPT){
+    } else if (one.type === PreloadEach.TYPE.SCRIPT) {
       targetPromise = this.execScript(one);
-    }else if(one.type === PreloadEach.TYPE.IMAGE){
+    } else if (one.type === PreloadEach.TYPE.IMAGE) {
       targetPromise = this.execImage(one);
-    }else{
-      targetPromise = new Promise((r)=>{r()});
+    } else {
+      targetPromise = Promise.resolve();
     }
 
-    return targetPromise.catch((err) =>{
+    return targetPromise.catch((err) => {
       console.error(err);
-      return new Promise((r)=>r());
-    }).then(()=>{
+      return Promise.resolve();
+    }).then(() => {
       let index = this.currentQueue.indexOf(one);
-      if(index >= 0){
-        this.currentQueue.splice(index,1);
+      if (index >= 0) {
+        this.currentQueue.splice(index, 1);
       }
       this.finishedQueue.push(one);
       this.execQueue();
@@ -117,18 +146,19 @@ class PreloadEach {
 
   }
 
-  execHtml(one){
-    return fetch(one.url,{
+  execHtml(one) {
+    return fetch(one.url, {
       mode: 'no-cors',
-      cache : "force-cache",
+      cache: "force-cache",
       credentials: 'same-origin'
     }).then((response) => {
       return response.text();
     }).then((text) => {
-      if(one.type === PreloadEach.TYPE.HTML && one.nest <= this.options.maxNest){
-        let dom = document.createElement("html");
+      if (one.type === PreloadEach.TYPE.HTML && one.nest <= this.options.maxNest) {
+        let dom = document.createDocumentFragment("html");   // querySelector is not work
+        // let dom = document.createElement("html");
         dom.innerHTML = text;
-        this.addQueueFromDom(dom,one.nest+1);
+        this.addQueueFromDom(dom, one.nest + 1);
       }
 
       return this.createPreloadTag(one);
@@ -136,29 +166,33 @@ class PreloadEach {
     })
   }
 
-  execScript(one){
+  execScript(one) {
     return this.createPreloadTag(one);
   }
 
-  execImage(one){
-      return this.createPreloadTag(one);
+  execImage(one) {
+    return this.createPreloadTag(one);
   }
 
-  createPreloadTag(one){
-    return new Promise((resolve)=>{
-      // let preloadDom = document.createElement("link");
-      // preloadDom.rel = "preload";
-      // preloadDom.as = one.type;
-      // preloadDom.href = one.url;
+  createPreloadTag(one) {
+    return new Promise((resolve) => {
+      let linkDom = document.createElement("link");
+      if (linkDom.relList.supports("prefetch")) {
+        linkDom.rel = "prefetch";
+        linkDom.as = one.type;
+      } else {
+        linkDom.rel = "preload";
+        linkDom.as = "fetch";
+      }
+      linkDom.href = one.url;
+      console.log(linkDom);
 
-      let prefetchDom = document.createElement("link");
-      prefetchDom.rel = "prefetch";
-      prefetchDom.as = one.type;
-      prefetchDom.href = one.url;
+      document.head.appendChild(linkDom);
 
       resolve();
     });
   }
+
 
 }
 
